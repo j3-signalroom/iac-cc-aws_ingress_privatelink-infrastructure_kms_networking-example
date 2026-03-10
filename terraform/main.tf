@@ -141,7 +141,7 @@ resource "aws_kms_key" "byok_sandbox" {
 }
 
 resource "aws_kms_alias" "byok_sandbox" {
-  name          = "alias/confluent-cloud-byok"
+  name          = "alias/confluent-cloud-byok-sandbox"
   target_key_id = aws_kms_key.byok_sandbox.key_id
 
   depends_on = [ 
