@@ -14,76 +14,9 @@ terraform {
         }
         confluent = {
             source  = "confluentinc/confluent"
-            version = "2.62.0"
+            version = "2.63.0"
         }
     }
-}
-
-# ===================================================================================
-# AWS KMS BYOK ENCRYPTION CONFIGURATION
-# ===================================================================================
-data "aws_caller_identity" "current" {}
-
-data "aws_iam_policy_document" "byok_key_policy" {
-  # Allow the AWS account root full access to manage the KMS key
-  statement {
-    sid    = "EnableRootAccountPermissions"
-    effect = "Allow"
-
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
-    }
-
-    actions   = ["kms:*"]
-    resources = ["*"]
-  }
-
-  # Grant Confluent Cloud the minimum permissions needed for BYOK encryption
-  statement {
-    sid    = "AllowConfluentCloudBYOKAccess"
-    effect = "Allow"
-
-    principals {
-      type        = "AWS"
-      identifiers = ["arn:aws:iam::${var.confluent_byok_account_id}:root"]
-    }
-
-    actions = [
-      "kms:Encrypt",
-      "kms:Decrypt",
-      "kms:ReEncrypt*",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey",
-      "kms:CreateGrant",
-      "kms:ListGrants",
-      "kms:RevokeGrant",
-    ]
-
-    resources = ["*"]
-  }
-}
-
-resource "aws_kms_key" "byok" {
-  count = var.aws_kms_key_arn == "" ? 1 : 0
-
-  description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
-  deletion_window_in_days = 14
-  enable_key_rotation     = true
-  policy                  = data.aws_iam_policy_document.byok_key_policy.json
-}
-
-resource "aws_kms_alias" "byok" {
-  count = var.aws_kms_key_arn == "" ? 1 : 0
-
-  name          = "alias/confluent-cloud-byok"
-  target_key_id = aws_kms_key.byok[0].key_id
-}
-
-resource "confluent_byok_key" "aws" {
-  aws {
-    key_arn = local.kms_key_arn
-  }
 }
 
 # ===================================================================================
@@ -183,6 +116,99 @@ module "sandbox_access_point" {
   ]
 }
 
+resource "aws_kms_key" "byok_sandbox" {
+  description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
+  deletion_window_in_days = 14
+  enable_key_rotation     = true
+  policy                  = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountPermissions"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action    = "kms:*"
+        Resource  = "*"
+      }
+    ]
+  })
+
+  depends_on = [ 
+    module.sandbox_access_point 
+  ]
+}
+
+resource "aws_kms_alias" "byok_sandbox" {
+  name          = "alias/confluent-cloud-byok"
+  target_key_id = aws_kms_key.byok_sandbox.key_id
+
+  depends_on = [ 
+    aws_kms_key.byok_sandbox 
+  ]
+}
+
+resource "confluent_byok_key" "sandbox" {
+  aws {
+    key_arn = aws_kms_key.byok_sandbox.arn
+  }
+
+  depends_on = [ 
+    aws_kms_alias.byok_sandbox 
+  ]
+}
+
+resource "aws_kms_key_policy" "byok_sandbox" {
+  key_id = aws_kms_key.byok_sandbox.key_id
+  policy  = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountPermissions"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        Sid       = "AllowConfluentCloudBYOKAccess"
+        Effect    = "Allow"
+        Principal = {
+          AWS = confluent_byok_key.sandbox.aws[0].roles
+        }
+        Action    = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey",
+        ]
+        Resource  = "*"
+      },
+      {
+        Sid       = "AllowConfluentCloudToAttachPersistentResources"
+        Effect    = "Allow"
+        Principal = {
+          AWS = confluent_byok_key.sandbox.aws[0].roles
+        }
+        Action    = [
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:RevokeGrant",
+        ]
+        Resource  = "*"
+      }
+    ]
+  })
+
+  depends_on = [ 
+    confluent_byok_key.sandbox 
+  ]
+}
+
 resource "confluent_kafka_cluster" "sandbox_cluster" {
   display_name = "sandbox_cluster"
   availability = "HIGH"
@@ -195,11 +221,11 @@ resource "confluent_kafka_cluster" "sandbox_cluster" {
   }
 
   byok_key {
-    id = confluent_byok_key.aws.id
+    id = confluent_byok_key.sandbox.id
   }
 
   depends_on = [
-    module.sandbox_access_point
+    confluent_byok_key.sandbox
   ]
 }
 
@@ -281,6 +307,99 @@ module "shared_access_point" {
   ]
 }
 
+resource "aws_kms_key" "byok_shared" {
+  description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
+  deletion_window_in_days = 14
+  enable_key_rotation     = true
+  policy                  = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountPermissions"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action    = "kms:*"
+        Resource  = "*"
+      }
+    ]
+  })
+
+  depends_on = [ 
+    module.shared_access_point 
+  ]
+}
+
+resource "aws_kms_alias" "byok_shared" {
+  name          = "alias/confluent-cloud-byok-shared"
+  target_key_id = aws_kms_key.byok_shared.key_id
+
+  depends_on = [ 
+    aws_kms_key.byok_shared 
+  ]
+}
+
+resource "confluent_byok_key" "shared" {
+  aws {
+    key_arn = aws_kms_key.byok_shared.arn
+  }
+
+  depends_on = [ 
+    aws_kms_alias.byok_shared
+  ]
+}
+
+resource "aws_kms_key_policy" "byok_shared" {
+  key_id = aws_kms_key.byok_shared.key_id
+  policy  = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "EnableRootAccountPermissions"
+        Effect    = "Allow"
+        Principal = {
+          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+        }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        Sid       = "AllowConfluentCloudBYOKAccess"
+        Effect    = "Allow"
+        Principal = {
+          AWS = confluent_byok_key.shared.aws[0].roles
+        }
+        Action    = [
+          "kms:Encrypt",
+          "kms:Decrypt",
+          "kms:ReEncrypt*",
+          "kms:GenerateDataKey*",
+          "kms:DescribeKey",
+        ]
+        Resource  = "*"
+      },
+      {
+        Sid       = "AllowConfluentCloudToAttachPersistentResources"
+        Effect    = "Allow"
+        Principal = {
+          AWS = confluent_byok_key.shared.aws[0].roles
+        }
+        Action    = [
+          "kms:CreateGrant",
+          "kms:ListGrants",
+          "kms:RevokeGrant",
+        ]
+        Resource  = "*"
+      }
+    ]
+  })
+
+  depends_on = [ 
+    confluent_byok_key.shared
+  ]
+}
+
 resource "confluent_kafka_cluster" "shared_cluster" {
   display_name = "shared_cluster"
   availability = "HIGH"
@@ -293,11 +412,11 @@ resource "confluent_kafka_cluster" "shared_cluster" {
   }
 
   byok_key {
-    id = confluent_byok_key.aws.id
+    id = confluent_byok_key.shared.id
   }
 
   depends_on = [
-    module.shared_access_point
+    confluent_byok_key.shared
   ]
 }
 

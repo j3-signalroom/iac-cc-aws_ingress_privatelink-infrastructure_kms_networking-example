@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 data "aws_vpc" "tfc_agent" {
   id = var.tfc_agent_vpc_id
 }
@@ -24,6 +26,4 @@ locals {
 
   sandbox_vpc_name      = "sandbox-${confluent_environment.non_prod.display_name}"
   shared_vpc_name       = "shared-${confluent_environment.non_prod.display_name}"
-
-  kms_key_arn           = var.aws_kms_key_arn != "" ? var.aws_kms_key_arn : aws_kms_key.byok[0].arn
 }
