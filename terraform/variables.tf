@@ -1,0 +1,145 @@
+# ===================================================
+# CONFLUENT CLOUD CONFIGURATION
+# ===================================================
+variable "confluent_api_key" {
+  description = "Confluent API Key (also referred as Cloud API ID)."
+  type        = string
+}
+
+variable "confluent_api_secret" {
+  description = "Confluent API Secret."
+  type        = string
+  sensitive   = true
+}
+
+# ===================================================
+# AWS PROVIDER CONFIGURATION
+# ===================================================
+variable "aws_region" {
+    description = "The AWS Region."
+    type        = string
+}
+
+variable "aws_access_key_id" {
+    description = "The AWS Access Key ID."
+    type        = string
+    default     = ""
+}
+
+variable "aws_secret_access_key" {
+    description = "The AWS Secret Access Key."
+    type        = string
+    default     = ""
+}
+
+variable "aws_session_token" {
+    description = "The AWS Session Token."
+    type        = string
+    default     = ""
+}
+
+# ===================================================
+# CONFLUENT API KEY ROTATION CONFIGURATION
+# ===================================================
+variable "day_count" {
+    description = "How many day(s) should the API Key be rotated for."
+    type        = number
+    default     = 30
+    
+    validation {
+        condition     = var.day_count >= 1
+        error_message = "Rolling day count, `day_count`, must be greater than or equal to 1."
+    }
+}
+
+variable "number_of_api_keys_to_retain" {
+    description = "Specifies the number of API keys to create and retain.  Must be greater than or equal to 2 in order to maintain proper key rotation for your application(s)."
+    type        = number
+    default     = 2
+    
+    validation {
+        condition     = var.number_of_api_keys_to_retain >= 2
+        error_message = "Number of API keys to retain, `number_of_api_keys_to_retain`, must be greater than or equal to 2."
+    }
+}
+
+# ===================================================
+# TERRAFORM CONFIGURATION
+# ===================================================
+variable "tfc_agent_vpc_id" {
+  description = "Terraform Cloud Agent VPC ID (for tagging PHZ association purposes)"
+  type        = string
+}
+
+variable "tfc_agent_vpc_rt_ids" {
+  description = "Comma-separated list of Terraform Cloud Agent VPC Route Table IDs to associate with the Transit Gateway attachment"
+  type        = string
+}
+
+# ===================================================
+# DNS VPC CONFIGURATION
+# ===================================================
+variable "dns_vpc_id" {
+  description = "Enterprise (centralized) DNS VPC ID - Private Hosted Zones will be associated with this VPC"
+  type        = string
+}
+
+variable "dns_vpc_rt_ids" {
+  description = "Comma-separated list of Enterprise (centralized) DNS VPC Route Table IDs to associate with the Transit Gateway attachment"
+  type        = string
+}
+
+# ===================================================
+# TRANSIT GATEWAY CONFIGURATION
+# ===================================================
+variable "tgw_id" {
+  description = "Transit Gateway ID to attach the PrivateLink VPC to"
+  type        = string
+} 
+
+variable "tgw_rt_id" {
+  description = "Transit Gateway Route Table ID to associate the PrivateLink VPC attachment with"
+  type        = string
+}
+
+# ===================================================
+# VPN VPC CONFIGURATION
+# ===================================================
+variable "vpn_vpc_id" {
+  description = "VPN Client VPC ID - Private Hosted Zones will be associated with this VPC"
+  type        = string
+}
+
+variable "vpn_vpc_rt_ids" {
+  description = "Comma-separated list of VPN Client VPC Route Table IDs to associate with the Transit Gateway attachment"
+  type        = string
+}
+
+variable "vpn_endpoint_id" {
+  description = "VPN Endpoint ID for adding routes to PrivateLink VPCs"
+  type        = string
+}
+
+variable "vpn_target_subnet_ids" {
+  description = "Comma-separated list of VPN associated subnet IDs to create routes through"
+  type        = string
+}
+
+variable "confluent_glb_resolver_rule_id" {
+  description = "Confluent GLB Resolver Rule ID for adding rules to PrivateLink VPCs"
+  type        = string
+}
+
+# ===================================================
+# AWS KMS BYOK CONFIGURATION
+# ===================================================
+variable "aws_kms_key_arn" {
+  description = "Optional existing AWS KMS key ARN for Confluent Cloud BYOK encryption. If not provided, a new KMS key will be created."
+  type        = string
+  default     = ""
+}
+
+variable "confluent_byok_account_id" {
+  description = "The Confluent Cloud AWS account ID that will be granted access to use the KMS key for BYOK encryption."
+  type        = string
+}

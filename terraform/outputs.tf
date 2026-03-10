@@ -1,0 +1,105 @@
+output "all_sandbox_vpc_attributes" {
+  description = "All attributes of the sandbox VPC"
+  value       = module.sandbox_vpc
+}
+
+output "all_sandbox_access_point_attributes" {
+  description = "All attributes of the sandbox Access Point"
+  value       = module.sandbox_access_point
+}
+
+output "all_sandbox_dns_attributes" {
+  description = "All attributes of the sandbox DNS"
+  value       = module.sandbox_dns
+}
+
+output "all_shared_vpc_attributes" {
+  description = "All attributes of the shared VPC"
+  value       = module.shared_vpc
+}
+
+output "all_shared_access_point_attributes" {
+  description = "All attributes of the shared Access Point"
+  value       = module.shared_access_point
+}
+
+output "all_shared_dns_attributes" {
+  description = "All attributes of the shared DNS"
+  value       = module.shared_dns
+}
+
+output "tfc_agent_vpc_cidr_block" {
+  description = "VPC TFC Cloud CIDR Block"
+  value       = data.aws_vpc.tfc_agent.cidr_block
+}
+
+output "dns_vpc_cidr_block" {
+  description = "VPC DNS CIDR Block"
+  value       = data.aws_vpc.dns.cidr_block
+}
+
+output "vpn_vpc_cidr_block" {
+  description = "VPN VPC CIDR Block"
+  value       = data.aws_vpc.vpn.cidr_block
+}
+
+output "vpn_vpc_client_cidr_block" {
+  description = "VPN VPC Client CIDR Block"
+  value       = data.aws_ec2_client_vpn_endpoint.client_vpn.client_cidr_block
+}
+
+output "confluent_environment_id" {
+  description = "Confluent Cloud Environment ID"
+  value       = confluent_environment.non_prod.id
+} 
+
+output "confluent_gateway_id" {
+  description = "Confluent Cloud Gateway ID"
+  value       = confluent_gateway.non_prod.id
+}
+
+output "confluent_sandbox_kafka_cluster_id" {
+  description = "Confluent Cloud Sandbox Kafka Cluster ID"
+  value       = confluent_kafka_cluster.sandbox_cluster.id
+}
+
+output "confluent_shared_kafka_cluster_id" {
+  description = "Confluent Cloud Shared Kafka Cluster ID"
+  value       = confluent_kafka_cluster.shared_cluster.id
+}
+
+output "sandbox_kafka_cluster_endpoints" {
+  description = "Sandbox Kafka Cluster Endpoints"
+  value       = jsonencode(confluent_kafka_cluster.sandbox_cluster.endpoints)
+}
+
+output "shared_kafka_cluster_endpoints" {
+  description = "Shared Kafka Cluster Endpoints"
+  value       = jsonencode(confluent_kafka_cluster.shared_cluster.endpoints)
+}
+
+output "kms_key_arn" {
+  description = "AWS KMS key ARN used for Confluent Cloud BYOK encryption"
+  value       = local.kms_key_arn
+}
+
+output "confluent_byok_key_id" {
+  description = "Confluent Cloud BYOK key ID"
+  value       = confluent_byok_key.aws.id
+}
+
+output "deploy_script_arguments" {
+  description = "iac-cc-app_resources-example deploy.sh argument with values"
+  value = <<-EOT
+    =======================================================================================
+    iac-cc-app_resources-example deploy.sh argument with values
+    =======================================================================================
+      --confluent-environment-id=${confluent_environment.non_prod.id} \
+      --confluent-gateway-id=${confluent_gateway.non_prod.id} \
+      --confluent-sandbox-kafka-cluster-id=${confluent_kafka_cluster.sandbox_cluster.id} \
+      --confluent-shared-kafka-cluster-id=${confluent_kafka_cluster.shared_cluster.id} \
+      --confluent-sandbox-access-code-id=${module.sandbox_access_point.access_point_id} \
+      --confluent-shared-access-code-id=${module.shared_access_point.access_point_id} \
+    =======================================================================================
+  EOT
+}
