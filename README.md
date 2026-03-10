@@ -3,7 +3,7 @@ Officially, on **February 13, 2026**, [Confluent](https://docs.confluent.io/clou
 
 > **Note:** Support for PLATT resources will be deprecated in a future release.
 
-This repository delivers a comprehensive, production-grade **Terraform** reference implementation for building a fully private connectivity architecture between Amazon Web Services (AWS) and Confluent Cloud using **AWS Ingress PrivateLink**. It demonstrates how to implement a centralized DNS strategy using **Route 53 Private Hosted Zones** and **AWS Transit Gateway** to enable secure, scalable, multi-VPC access to Confluent Cloud Kafka clusters—without exposing traffic to the public internet.
+This repository delivers a comprehensive, production-grade **Terraform** reference implementation for building a fully private connectivity architecture between Amazon Web Services (AWS) and Confluent Cloud using **AWS Ingress PrivateLink**. It demonstrates how to implement a centralized DNS strategy using **Route 53 Private Hosted Zones** and **AWS Transit Gateway** to enable secure, scalable, multi-VPC access to Confluent Cloud Kafka clusters—without exposing traffic to the public internet. Additionally, it provisions **AWS KMS** customer-managed keys for **Bring Your Own Key (BYOK)** encryption, ensuring that all data at rest in Confluent Cloud Kafka clusters is encrypted with keys you own and control.
 
 The architecture models enterprise-ready patterns, including:
 
@@ -11,6 +11,7 @@ The architecture models enterprise-ready patterns, including:
 * Multi-VPC PrivateLink interface endpoint connectivity
 * Transit Gateway–based hub-and-spoke routing
 * Strict network isolation with no public ingress/egress paths
+* **AWS KMS BYOK encryption** for Confluent Cloud Kafka cluster data at rest
 
 Below is the Terraform resource visualization of the infrastructure:
 
@@ -47,6 +48,7 @@ Below is the Terraform resource visualization of the infrastructure:
         + [**2.1.4 Why Not VPC Peering?**](#214-why-not-vpc-peering)
         + [**2.1.5 Why Separate VPCs Per Cluster Instead of One Big VPC?**](#215-why-separate-vpcs-per-cluster-instead-of-one-big-vpc)
         + [**2.1.6 The Terraform Cloud Agent Piece**](#216-the-terraform-cloud-agent-piece)
+        + [**2.1.7 AWS KMS BYOK Encryption**](#217-aws-kms-byok-encryption)
 + [**3.0 Let's Get Started**](#30-lets-get-started)
     - [**3.1 Deploy the Infrastructure**](#31-deploy-the-infrastructure)
     - [**3.2 Teardown the Infrastructure**](#32-teardown-the-infrastructure)
@@ -445,6 +447,7 @@ This repo creates a multi-VPC architecture where Confluent Cloud Enterprise Kafk
 graph TB
     subgraph CC["☁️ Confluent Cloud (non-prod environment)"]
         GW["🔀 PrivateLink Gateway\nnon-prod-privatelink-gateway"]
+        BYOK["🔑 BYOK Key\n(confluent_byok_key)"]
         subgraph SBcluster["Sandbox Kafka Cluster\n(Enterprise · HIGH availability)"]
             SBAP["Access Point\nccloud-accesspoint-sandbox"]
         end
@@ -453,6 +456,12 @@ graph TB
         end
         GW --> SBAP
         GW --> SHAP
+        BYOK -.->|"encrypts data at rest"| SBcluster
+        BYOK -.->|"encrypts data at rest"| SHcluster
+    end
+
+    subgraph KMS["🔐 AWS KMS"]
+        KMSKEY["Customer-Managed KMS Key\nalias/confluent-cloud-byok\n(auto-rotation enabled)"]
     end
 
     subgraph TGW["🔁 AWS Transit Gateway"]
@@ -554,19 +563,24 @@ graph TB
     TFCA -->|"provision via Terraform Cloud"| SB_VPC
     TFCA -->|"provision via Terraform Cloud"| SH_VPC
 
+    %% KMS BYOK encryption
+    KMSKEY -->|"cross-account access"| BYOK
+
     classDef confluent fill:#0073e6,color:#fff,stroke:#005bb5
     classDef aws fill:#FF9900,color:#000,stroke:#cc7a00
     classDef vpn fill:#2e7d32,color:#fff,stroke:#1b5e20
     classDef dns fill:#6a1b9a,color:#fff,stroke:#4a148c
     classDef tfc fill:#5c4ee5,color:#fff,stroke:#3d35b5
     classDef tgw fill:#bf360c,color:#fff,stroke:#870000
+    classDef kms fill:#d32f2f,color:#fff,stroke:#b71c1c
 
-    class GW,SBAP,SHAP confluent
+    class GW,SBAP,SHAP,BYOK confluent
     class SB_EP,SB_SG,SH_EP,SH_SG aws
     class CVPN,DEVS vpn
     class SB_PHZ,SB_WILD,SB_SYSRULE,SB_GLBFWD,SH_PHZ,SH_WILD,SH_SYSRULE,SH_GLBFWD,R53R dns
     class TFCA tfc
     class TGW,TGWRT tgw
+    class KMSKEY kms
 ```
 
 ### **2.1 Why This Architecture?**
@@ -599,6 +613,18 @@ Each Kafka cluster gets its own VPC and PrivateLink endpoint through the reusabl
 
 #### **2.1.6 The Terraform Cloud Agent Piece**
 The architecture runs Terraform Cloud in agent execution mode, where TFC Agents run inside a private VPC within AWS. This is essential because the Terraform provider must be able to reach the Confluent PrivateLink endpoints to validate connections and manage resources. If Terraform ran in the default remote execution mode (on HashiCorp's infrastructure), it wouldn't have network access to the private endpoints. By running agents in a VPC that's attached to the Transit Gateway and associated with the centralized PHZ, Terraform can resolve and reach the PrivateLink endpoints during plan and apply operations.
+
+#### **2.1.7 AWS KMS BYOK Encryption**
+This architecture implements **Bring Your Own Key (BYOK)** encryption for Confluent Cloud Kafka clusters using **AWS Key Management Service (KMS)**. Instead of relying on Confluent-managed encryption keys, you provision and control a customer-managed KMS key in your own AWS account, giving you full ownership over the encryption lifecycle for data at rest.
+
+The KMS integration works as follows:
+
+1. **Key Provisioning**: A customer-managed KMS key is created in your AWS account (or you can supply an existing key ARN via the `aws_kms_key_arn` Terraform variable). The key is aliased as `alias/confluent-cloud-byok` and configured with automatic key rotation enabled and a 14-day deletion protection window.
+2. **Cross-Account Access Policy**: The KMS key policy grants the Confluent Cloud AWS account (identified by `confluent_byok_account_id`) the minimum permissions required for BYOK encryption: `Encrypt`, `Decrypt`, `ReEncrypt*`, `GenerateDataKey*`, `DescribeKey`, `CreateGrant`, `ListGrants`, and `RevokeGrant`. Your AWS account root retains full `kms:*` management access.
+3. **BYOK Registration**: The KMS key is registered with Confluent Cloud through the `confluent_byok_key` resource, which establishes the trust relationship between your AWS KMS key and Confluent's encryption infrastructure.
+4. **Cluster Encryption**: Both the Sandbox and Shared Kafka clusters are configured with a `byok_key` block referencing the registered BYOK key, ensuring all data at rest is encrypted using your customer-managed key.
+
+This approach satisfies compliance requirements (e.g., SOC 2, HIPAA, PCI-DSS) that mandate customer-controlled encryption keys, and gives you the ability to revoke Confluent's access to the key at any time — effectively crypto-shredding all cluster data.
 
 ## **3.0 Let's Get Started**
 
@@ -642,6 +668,15 @@ Here's the argument table for `deploy.sh create` command:
 | `--confluent-glb-resolver-rule-id` | ✅ | The ID of the SYSTEM resolver rule in Route 53 that ensures Confluent domain queries are resolved locally within AWS and not forwarded to external DNS servers. Exported as `TF_VAR_confluent_glb_resolver_rule_id`. |
 
 > All 15 arguments are required — the script exits with code `85` if any are missing.
+
+**Additional Terraform Variables for KMS BYOK Encryption**
+
+The following variables must be set separately (e.g., via `terraform.tfvars`, environment variables, or Terraform Cloud workspace variables) as they are not passed through the `deploy.sh` script:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `confluent_byok_account_id` | ✅ | The Confluent Cloud AWS account ID that will be granted cross-account access to use the KMS key for BYOK encryption. |
+| `aws_kms_key_arn` | ❌ | Optional existing AWS KMS key ARN for Confluent Cloud BYOK encryption. If not provided, a new KMS key will be created with automatic key rotation enabled. |
 
 ### **3.2 Teardown the Infrastructure**
 ```bash
@@ -692,8 +727,12 @@ Here's the argument table for `deploy.sh destroy` command:
 - **CC**: Confluent Cloud - A fully managed event streaming platform based on Apache Kafka.
 - **PL**: PrivateLink - An AWS service that enables private connectivity between VPCs and services.
 - **IaC**: Infrastructure as Code - The practice of managing and provisioning computing infrastructure through machine-readable definition files.
+- **KMS**: Key Management Service - AWS service for creating and managing cryptographic keys used to encrypt data.
+- **BYOK**: Bring Your Own Key - An encryption model where customers provide and control their own encryption keys rather than using provider-managed keys.
 
 ### **4.2 Related Documentation**
+- [Confluent Cloud BYOK Encryption](https://docs.confluent.io/cloud/current/clusters/byok/index.html)
+- [Confluent Cloud BYOK for AWS](https://docs.confluent.io/cloud/current/clusters/byok/byok-aws.html)
 - [AWS PrivateLink Overview in Confluent Cloud](https://docs.confluent.io/cloud/current/networking/aws-privatelink-overview.html#aws-privatelink-overview-in-ccloud)
 - [Use AWS PrivateLink for Serverless Products on Confluent Cloud](https://docs.confluent.io/cloud/current/networking/aws-platt.html#use-aws-privatelink-for-serverless-products-on-ccloud)
 - [GitHub Sample Project for Confluent Terraform Provider PrivateLink Attachment](https://github.com/confluentinc/terraform-provider-confluent/tree/master/examples/configurations/enterprise-privatelinkattachment-aws-kafka-acls)
