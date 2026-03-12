@@ -10,7 +10,7 @@ terraform {
     required_providers {
         aws = {
             source  = "hashicorp/aws"
-            version = "6.35.1"
+            version = "6.36.0"
         }
         confluent = {
             source  = "confluentinc/confluent"
@@ -116,6 +116,9 @@ module "sandbox_access_point" {
   ]
 }
 
+# Creates an AWS KMS key intended to allow you to Bring Your Own Key (BYOK) for use with
+# your Sandbox Confluent Cloud Kafka Cluster, with giving your AWS account root minimal 
+# "allow the account owner full control" permissions
 resource "aws_kms_key" "byok_sandbox" {
   description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
   deletion_window_in_days = 14
@@ -140,6 +143,9 @@ resource "aws_kms_key" "byok_sandbox" {
   ]
 }
 
+# Creates a human-friendly alias for the KMS key created above, which is required for
+# Confluent Cloud BYOK integration (i.e., you cannot use the KMS key's ARN directly,
+# but must reference it via an alias)
 resource "aws_kms_alias" "byok_sandbox" {
   name          = "alias/confluent-cloud-byok-sandbox"
   target_key_id = aws_kms_key.byok_sandbox.key_id
@@ -149,6 +155,7 @@ resource "aws_kms_alias" "byok_sandbox" {
   ]
 }
 
+# Registers the AWS KMS key with Confluent Cloud 
 resource "confluent_byok_key" "sandbox" {
   aws {
     key_arn = aws_kms_key.byok_sandbox.arn
@@ -159,6 +166,8 @@ resource "confluent_byok_key" "sandbox" {
   ]
 }
 
+# This attaches the complete KMS key policy to the BYOK key, granting Confluent Cloud
+# the permissions it needs to actually use the key for encryption
 resource "aws_kms_key_policy" "byok_sandbox" {
   key_id = aws_kms_key.byok_sandbox.key_id
   policy  = jsonencode({
@@ -307,6 +316,9 @@ module "shared_access_point" {
   ]
 }
 
+# Creates an AWS KMS key intended to allow you to Bring Your Own Key (BYOK) for use with
+# your Sandbox Confluent Cloud Kafka Cluster, with giving your AWS account root minimal 
+# "allow the account owner full control" permissions
 resource "aws_kms_key" "byok_shared" {
   description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
   deletion_window_in_days = 14
@@ -331,6 +343,9 @@ resource "aws_kms_key" "byok_shared" {
   ]
 }
 
+# Creates a human-friendly alias for the KMS key created above, which is required for
+# Confluent Cloud BYOK integration (i.e., you cannot use the KMS key's ARN directly,
+# but must reference it via an alias)
 resource "aws_kms_alias" "byok_shared" {
   name          = "alias/confluent-cloud-byok-shared"
   target_key_id = aws_kms_key.byok_shared.key_id
@@ -340,6 +355,7 @@ resource "aws_kms_alias" "byok_shared" {
   ]
 }
 
+# Registers the AWS KMS key with Confluent Cloud
 resource "confluent_byok_key" "shared" {
   aws {
     key_arn = aws_kms_key.byok_shared.arn
@@ -350,6 +366,8 @@ resource "confluent_byok_key" "shared" {
   ]
 }
 
+# This attaches the complete KMS key policy to the BYOK key, granting Confluent Cloud
+# the permissions it needs to actually use the key for encryption
 resource "aws_kms_key_policy" "byok_shared" {
   key_id = aws_kms_key.byok_shared.key_id
   policy  = jsonencode({
