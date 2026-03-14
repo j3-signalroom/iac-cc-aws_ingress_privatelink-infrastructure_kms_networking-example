@@ -1,5 +1,3 @@
-data "aws_caller_identity" "current" {}
-
 data "aws_vpc" "tfc_agent" {
   id = var.tfc_agent_vpc_id
 }
