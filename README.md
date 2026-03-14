@@ -740,3 +740,4 @@ Here's the argument table for `deploy.sh destroy` command:
 - [IP Filtering on Confluent Cloud](https://docs.confluent.io/cloud/current/security/access-control/ip-filtering/overview.html?ajs_aid=9a5807f8-b35a-447c-a414-b31dd39ae98a&ajs_uid=2984609#ip-filtering-overview)
 - [AWS/Azure PrivateLink Networking Course](https://developer.confluent.io/courses/confluent-cloud-networking/private-link/)
 - [Hands On: Configuring a PrivateLink Cluster](https://developer.confluent.io/courses/confluent-cloud-networking/configure-private-link/)
+- [Use Self-Managed Encryption Keys in Confluent Cloud on AWS](https://docs.confluent.io/cloud/current/security/encrypt/byok/byok-aws.html#use-self-manage-encryption-keys-in-ccloud-on-aws)
