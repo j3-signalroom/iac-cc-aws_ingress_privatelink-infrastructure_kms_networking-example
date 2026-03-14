@@ -1,9 +1,10 @@
-# Creates an AWS KMS key intended to allow you to Bring Your Own Key (BYOK) for use with
-# your Sandbox Confluent Cloud Kafka Cluster, with giving your AWS account root minimal 
-# "allow the account owner full control" permissions
+# Creates an AWS KMS key for Confluent Cloud BYOK encryption. The initial policy grants the AWS account
+# root principal admin-only permissions (key management, no encrypt/decrypt). The full policy
+# including Confluent's IAM role permissions is applied separately via aws_kms_key_policy once
+# confluent_byok_key resolves the role ARNs
 resource "aws_kms_key" "byok" {
   description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
-  deletion_window_in_days = 14
+  deletion_window_in_days = var.deletion_window_days
   enable_key_rotation     = true
   policy                  = jsonencode({
     Version = "2012-10-17"
@@ -14,23 +15,32 @@ resource "aws_kms_key" "byok" {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action    = "kms:*"
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion",
+          "kms:TagResource",
+          "kms:UntagResource"
+        ]
         Resource  = "*"
       }
     ]
   })
 }
 
-# Creates a human-friendly alias for the KMS key created above, which is required for
-# Confluent Cloud BYOK integration (i.e., you cannot use the KMS key's ARN directly,
-# but must reference it via an alias)
+# Creates a human-friendly alias for the KMS key created above
 resource "aws_kms_alias" "byok" {
   name          = "alias/confluent-cloud-byok-${var.kafka_cluster_name}"
   target_key_id = aws_kms_key.byok.key_id
-
-  depends_on = [ 
-    aws_kms_key.byok 
-  ]
 }
 
 # Registers the AWS KMS key with Confluent Cloud 
@@ -44,8 +54,8 @@ resource "confluent_byok_key" "cluster" {
   ]
 }
 
-# This attaches the complete KMS key policy to the BYOK key, granting Confluent Cloud
-# the permissions it needs to actually use the key for encryption
+# Replaces the initial bootstrap policy with the full production policy, adding Confluent Cloud's 
+# dynamically-provisioned IAM role ARNs which are only known after confluent_byok_key is registered
 resource "aws_kms_key_policy" "byok" {
   key_id = aws_kms_key.byok.key_id
   policy  = jsonencode({
@@ -57,7 +67,22 @@ resource "aws_kms_key_policy" "byok" {
         Principal = {
           AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
         }
-        Action    = "kms:*"
+        Action = [
+          "kms:Create*",
+          "kms:Describe*",
+          "kms:Enable*",
+          "kms:List*",
+          "kms:Put*",
+          "kms:Update*",
+          "kms:Revoke*",
+          "kms:Disable*",
+          "kms:Get*",
+          "kms:Delete*",
+          "kms:ScheduleKeyDeletion",
+          "kms:CancelKeyDeletion",
+          "kms:TagResource",
+          "kms:UntagResource"
+        ]
         Resource  = "*"
       },
       {
@@ -90,8 +115,4 @@ resource "aws_kms_key_policy" "byok" {
       }
     ]
   })
-
-  depends_on = [ 
-    confluent_byok_key.cluster
-  ]
 }

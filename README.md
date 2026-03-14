@@ -617,11 +617,11 @@ The architecture runs Terraform Cloud in agent execution mode, where TFC Agents 
 #### **2.1.7 AWS KMS BYOK Encryption**
 This architecture implements **Bring Your Own Key (BYOK)** encryption for Confluent Cloud Kafka clusters using **AWS Key Management Service (KMS)**. Instead of relying on Confluent-managed encryption keys, you provision and control a customer-managed KMS key in your own AWS account, giving you full ownership over the encryption lifecycle for data at rest.
 
-The KMS integration works as follows:
+The BYOK logic is encapsulated in a reusable `byok` module (`terraform/modules/byok/`), which is instantiated once per Kafka cluster (Sandbox and Shared). The integration works as follows:
 
-1. **Key Provisioning**: A customer-managed KMS key is created in your AWS account (or you can supply an existing key ARN via the `aws_kms_key_arn` Terraform variable). The key is aliased as `alias/confluent-cloud-byok` and configured with automatic key rotation enabled and a 14-day deletion protection window.
-2. **Cross-Account Access Policy**: The KMS key policy grants the Confluent Cloud AWS account (identified by `confluent_byok_account_id`) the minimum permissions required for BYOK encryption: `Encrypt`, `Decrypt`, `ReEncrypt*`, `GenerateDataKey*`, `DescribeKey`, `CreateGrant`, `ListGrants`, and `RevokeGrant`. Your AWS account root retains full `kms:*` management access.
-3. **BYOK Registration**: The KMS key is registered with Confluent Cloud through the `confluent_byok_key` resource, which establishes the trust relationship between your AWS KMS key and Confluent's encryption infrastructure.
+1. **Key Provisioning**: A customer-managed KMS key is created in your AWS account for each Kafka cluster. Each key is aliased as `alias/confluent-cloud-byok-{kafka_cluster_name}` (e.g., `alias/confluent-cloud-byok-sandbox_cluster`) and configured with automatic key rotation enabled and a configurable deletion protection window (default 14 days, controlled by the `deletion_window_days` variable).
+2. **Least-Privilege Key Policy**: The KMS key uses a two-phase policy approach. Initially, only the AWS account root principal is granted least-privilege administrative permissions (key management actions such as `Create*`, `Describe*`, `Enable*`, `List*`, `Put*`, `Update*`, `Revoke*`, `Disable*`, `Get*`, `Delete*`, `ScheduleKeyDeletion`, `CancelKeyDeletion`, `TagResource`, and `UntagResource` — but explicitly **not** `kms:Encrypt` or `kms:Decrypt`). After the BYOK key is registered with Confluent Cloud, a full production policy is applied that adds Confluent's dynamically-provisioned IAM role ARNs with the minimum permissions required for encryption: `Encrypt`, `Decrypt`, `ReEncrypt*`, `GenerateDataKey*`, `DescribeKey`, `CreateGrant`, `ListGrants`, and `RevokeGrant`.
+3. **BYOK Registration**: The KMS key is registered with Confluent Cloud through the `confluent_byok_key` resource, which establishes the trust relationship between your AWS KMS key and Confluent's encryption infrastructure. Confluent's IAM role ARNs are dynamically resolved from this registration — no manual account ID configuration is required.
 4. **Cluster Encryption**: Both the Sandbox and Shared Kafka clusters are configured with a `byok_key` block referencing the registered BYOK key, ensuring all data at rest is encrypted using your customer-managed key.
 
 This approach satisfies compliance requirements (e.g., SOC 2, HIPAA, PCI-DSS) that mandate customer-controlled encryption keys, and gives you the ability to revoke Confluent's access to the key at any time — effectively crypto-shredding all cluster data.
@@ -667,16 +667,15 @@ Here's the argument table for `deploy.sh create` command:
 | `--vpn-target-subnet-ids` | ✅ | Subnet IDs associated with the VPN endpoint target network. Exported as `TF_VAR_vpn_target_subnet_ids`. |
 | `--confluent-glb-resolver-rule-id` | ✅ | The ID of the SYSTEM resolver rule in Route 53 that ensures Confluent domain queries are resolved locally within AWS and not forwarded to external DNS servers. Exported as `TF_VAR_confluent_glb_resolver_rule_id`. |
 
-> All 15 arguments are required — the script exits with code `85` if any are missing.
+> All 14 arguments are required — the script exits with code `85` if any are missing.
 
 **Additional Terraform Variables for KMS BYOK Encryption**
 
-The following variables must be set separately (e.g., via `terraform.tfvars`, environment variables, or Terraform Cloud workspace variables) as they are not passed through the `deploy.sh` script:
+The following variable can be set separately (e.g., via `terraform.tfvars`, environment variables, or Terraform Cloud workspace variables) as it is not passed through the `deploy.sh` script:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `confluent_byok_account_id` | ✅ | The Confluent Cloud AWS account ID that will be granted cross-account access to use the KMS key for BYOK encryption. |
-| `aws_kms_key_arn` | ❌ | Optional existing AWS KMS key ARN for Confluent Cloud BYOK encryption. If not provided, a new KMS key will be created with automatic key rotation enabled. |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `deletion_window_days` | ❌ | `14` | Number of days before the KMS key is permanently deleted after destruction. |
 
 ### **3.2 Teardown the Infrastructure**
 ```bash
@@ -715,7 +714,7 @@ Here's the argument table for `deploy.sh destroy` command:
 | `--vpn-target-subnet-ids` | ✅ | Subnet IDs associated with the VPN endpoint target network. Exported as `TF_VAR_vpn_target_subnet_ids`. |
 | `--confluent-glb-resolver-rule-id` | ✅ | The ID of the SYSTEM resolver rule in Route 53 that ensures Confluent domain queries are resolved locally within AWS and not forwarded to external DNS servers. Exported as `TF_VAR_confluent_glb_resolver_rule_id`. |
 
-> All 15 arguments are required — the script exits with code `85` if any are missing.
+> All 14 arguments are required — the script exits with code `85` if any are missing.
 
 ## **4.0 Resources**
 

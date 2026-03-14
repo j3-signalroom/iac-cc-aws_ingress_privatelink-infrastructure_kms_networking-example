@@ -185,13 +185,36 @@ resource "aws_route" "dns_to_privatelink" {
 # CLIENT VPN ROUTES TO PRIVATELINK VPC
 # ============================================================================
 #
-# Add Client VPN routes so VPN clients can reach this PrivateLink VPC
-resource "aws_ec2_client_vpn_route" "to_privatelink" {
-  count = var.vpn_endpoint_id != null ? length(var.vpn_target_subnet_ids) : 0
+# Add Client VPN routes so VPN clients can reach this PrivateLink VPC.
+# Routes are created one at a time — AWS Client VPN can't handle parallel
+# route operations reliably, so each route depends on the previous one.
+resource "aws_ec2_client_vpn_route" "to_privatelink_0" {
+  count = var.vpn_endpoint_id != null && length(var.vpn_target_subnet_ids) > 0 ? 1 : 0
 
   client_vpn_endpoint_id = var.vpn_endpoint_id
   destination_cidr_block = aws_vpc.privatelink.cidr_block
-  target_vpc_subnet_id   = var.vpn_target_subnet_ids[count.index]
+  target_vpc_subnet_id   = var.vpn_target_subnet_ids[0]
+
+  timeouts {
+    create = "10m"
+    delete = "10m"
+  }
+}
+
+resource "aws_ec2_client_vpn_route" "to_privatelink_1" {
+  count = var.vpn_endpoint_id != null && length(var.vpn_target_subnet_ids) > 1 ? 1 : 0
+
+  client_vpn_endpoint_id = var.vpn_endpoint_id
+  destination_cidr_block = aws_vpc.privatelink.cidr_block
+  target_vpc_subnet_id   = var.vpn_target_subnet_ids[1]
+
+  # Serialize: wait for the first route to complete
+  depends_on = [aws_ec2_client_vpn_route.to_privatelink_0]
+
+  timeouts {
+    create = "10m"
+    delete = "10m"
+  }
 }
 
 # Authorize VPN clients to access this PrivateLink VPC

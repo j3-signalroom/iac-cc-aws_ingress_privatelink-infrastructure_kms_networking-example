@@ -119,8 +119,9 @@ module "sandbox_access_point" {
 module "sandbox_byok" {
   source = "./modules/byok"
 
-  aws_region         = var.aws_region
-  kafka_cluster_name = "sandbox_cluster"
+  aws_region           = var.aws_region
+  kafka_cluster_name   = "sandbox_cluster"
+  deletion_window_days = var.deletion_window_days
 
   depends_on = [ 
     module.sandbox_access_point 
@@ -139,7 +140,7 @@ resource "confluent_kafka_cluster" "sandbox_cluster" {
   }
 
   byok_key {
-    id = module.sandbox_byok.byok_key
+    id = module.sandbox_byok.confluent_byok_key_id
   }
 
   depends_on = [
@@ -228,8 +229,9 @@ module "shared_access_point" {
 module "shared_byok" {
   source = "./modules/byok"
 
-  aws_region         = var.aws_region
-  kafka_cluster_name = "shared"
+  aws_region           = var.aws_region
+  kafka_cluster_name   = "shared"
+  deletion_window_days = var.deletion_window_days
 
   depends_on = [ 
     module.shared_access_point 
@@ -248,7 +250,7 @@ resource "confluent_kafka_cluster" "shared_cluster" {
   }
 
   byok_key {
-    id = module.shared_byok.byok_key
+    id = module.shared_byok.confluent_byok_key_id
   }
 
   depends_on = [
