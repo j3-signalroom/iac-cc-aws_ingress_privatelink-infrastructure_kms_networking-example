@@ -2,7 +2,7 @@
 
 #
 # *** Purpose ***
-# To create or destroy the infrastructure for the Confluent Cloud AWS Ingress PrivateLink Infrastructure & Networking example.
+# To create or destroy the infrastructure for the Confluent Cloud AWS Ingress PrivateLink Infrastructure with KMS & Networking example.
 #
 # *** Script Syntax ***
 # ./deploy.sh=<create | destroy> --profile=<SSO_PROFILE_NAME>

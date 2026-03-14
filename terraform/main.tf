@@ -116,105 +116,15 @@ module "sandbox_access_point" {
   ]
 }
 
-# Creates an AWS KMS key intended to allow you to Bring Your Own Key (BYOK) for use with
-# your Sandbox Confluent Cloud Kafka Cluster, with giving your AWS account root minimal 
-# "allow the account owner full control" permissions
-resource "aws_kms_key" "byok_sandbox" {
-  description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
-  deletion_window_in_days = 14
-  enable_key_rotation     = true
-  policy                  = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableRootAccountPermissions"
-        Effect    = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action    = "kms:*"
-        Resource  = "*"
-      }
-    ]
-  })
+module "sandbox_byok" {
+  source = "./modules/byok"
+
+  aws_region           = var.aws_region
+  kafka_cluster_name   = "sandbox_cluster"
+  deletion_window_days = var.deletion_window_days
 
   depends_on = [ 
     module.sandbox_access_point 
-  ]
-}
-
-# Creates a human-friendly alias for the KMS key created above, which is required for
-# Confluent Cloud BYOK integration (i.e., you cannot use the KMS key's ARN directly,
-# but must reference it via an alias)
-resource "aws_kms_alias" "byok_sandbox" {
-  name          = "alias/confluent-cloud-byok-sandbox"
-  target_key_id = aws_kms_key.byok_sandbox.key_id
-
-  depends_on = [ 
-    aws_kms_key.byok_sandbox 
-  ]
-}
-
-# Registers the AWS KMS key with Confluent Cloud 
-resource "confluent_byok_key" "sandbox" {
-  aws {
-    key_arn = aws_kms_key.byok_sandbox.arn
-  }
-
-  depends_on = [ 
-    aws_kms_alias.byok_sandbox 
-  ]
-}
-
-# This attaches the complete KMS key policy to the BYOK key, granting Confluent Cloud
-# the permissions it needs to actually use the key for encryption
-resource "aws_kms_key_policy" "byok_sandbox" {
-  key_id = aws_kms_key.byok_sandbox.key_id
-  policy  = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableRootAccountPermissions"
-        Effect    = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action    = "kms:*"
-        Resource  = "*"
-      },
-      {
-        Sid       = "AllowConfluentCloudBYOKAccess"
-        Effect    = "Allow"
-        Principal = {
-          AWS = confluent_byok_key.sandbox.aws[0].roles
-        }
-        Action    = [
-          "kms:Encrypt",
-          "kms:Decrypt",
-          "kms:ReEncrypt*",
-          "kms:GenerateDataKey*",
-          "kms:DescribeKey",
-        ]
-        Resource  = "*"
-      },
-      {
-        Sid       = "AllowConfluentCloudToAttachPersistentResources"
-        Effect    = "Allow"
-        Principal = {
-          AWS = confluent_byok_key.sandbox.aws[0].roles
-        }
-        Action    = [
-          "kms:CreateGrant",
-          "kms:ListGrants",
-          "kms:RevokeGrant",
-        ]
-        Resource  = "*"
-      }
-    ]
-  })
-
-  depends_on = [ 
-    confluent_byok_key.sandbox 
   ]
 }
 
@@ -230,11 +140,11 @@ resource "confluent_kafka_cluster" "sandbox_cluster" {
   }
 
   byok_key {
-    id = confluent_byok_key.sandbox.id
+    id = module.sandbox_byok.confluent_byok_key_id
   }
 
   depends_on = [
-    confluent_byok_key.sandbox
+    module.sandbox_byok
   ]
 }
 
@@ -316,105 +226,15 @@ module "shared_access_point" {
   ]
 }
 
-# Creates an AWS KMS key intended to allow you to Bring Your Own Key (BYOK) for use with
-# your Sandbox Confluent Cloud Kafka Cluster, with giving your AWS account root minimal 
-# "allow the account owner full control" permissions
-resource "aws_kms_key" "byok_shared" {
-  description             = "KMS key for Confluent Cloud Kafka BYOK encryption in ${var.aws_region}"
-  deletion_window_in_days = 14
-  enable_key_rotation     = true
-  policy                  = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableRootAccountPermissions"
-        Effect    = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action    = "kms:*"
-        Resource  = "*"
-      }
-    ]
-  })
+module "shared_byok" {
+  source = "./modules/byok"
+
+  aws_region           = var.aws_region
+  kafka_cluster_name   = "shared"
+  deletion_window_days = var.deletion_window_days
 
   depends_on = [ 
     module.shared_access_point 
-  ]
-}
-
-# Creates a human-friendly alias for the KMS key created above, which is required for
-# Confluent Cloud BYOK integration (i.e., you cannot use the KMS key's ARN directly,
-# but must reference it via an alias)
-resource "aws_kms_alias" "byok_shared" {
-  name          = "alias/confluent-cloud-byok-shared"
-  target_key_id = aws_kms_key.byok_shared.key_id
-
-  depends_on = [ 
-    aws_kms_key.byok_shared 
-  ]
-}
-
-# Registers the AWS KMS key with Confluent Cloud
-resource "confluent_byok_key" "shared" {
-  aws {
-    key_arn = aws_kms_key.byok_shared.arn
-  }
-
-  depends_on = [ 
-    aws_kms_alias.byok_shared
-  ]
-}
-
-# This attaches the complete KMS key policy to the BYOK key, granting Confluent Cloud
-# the permissions it needs to actually use the key for encryption
-resource "aws_kms_key_policy" "byok_shared" {
-  key_id = aws_kms_key.byok_shared.key_id
-  policy  = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "EnableRootAccountPermissions"
-        Effect    = "Allow"
-        Principal = {
-          AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
-        }
-        Action    = "kms:*"
-        Resource  = "*"
-      },
-      {
-        Sid       = "AllowConfluentCloudBYOKAccess"
-        Effect    = "Allow"
-        Principal = {
-          AWS = confluent_byok_key.shared.aws[0].roles
-        }
-        Action    = [
-          "kms:Encrypt",
-          "kms:Decrypt",
-          "kms:ReEncrypt*",
-          "kms:GenerateDataKey*",
-          "kms:DescribeKey",
-        ]
-        Resource  = "*"
-      },
-      {
-        Sid       = "AllowConfluentCloudToAttachPersistentResources"
-        Effect    = "Allow"
-        Principal = {
-          AWS = confluent_byok_key.shared.aws[0].roles
-        }
-        Action    = [
-          "kms:CreateGrant",
-          "kms:ListGrants",
-          "kms:RevokeGrant",
-        ]
-        Resource  = "*"
-      }
-    ]
-  })
-
-  depends_on = [ 
-    confluent_byok_key.shared
   ]
 }
 
@@ -430,11 +250,11 @@ resource "confluent_kafka_cluster" "shared_cluster" {
   }
 
   byok_key {
-    id = confluent_byok_key.shared.id
+    id = module.shared_byok.confluent_byok_key_id
   }
 
   depends_on = [
-    confluent_byok_key.shared
+    module.shared_byok
   ]
 }
 
